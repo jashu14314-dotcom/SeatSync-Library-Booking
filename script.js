@@ -1,11 +1,47 @@
 "use strict";
 
-// SEATSYNC — COMPLETE APPLICATION LOGIC
+// FIREBASE IMPORTS
+import { initializeApp } from
+  "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
 
-const USER_KEY = "seatsync_users_v2";
-const BOOKING_KEY = "seatsync_bookings_v2";
-const SESSION_KEY = "seatsync_session_v2";
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
 
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  collection,
+  onSnapshot,
+  runTransaction,
+  deleteDoc,
+  serverTimestamp,
+  Timestamp
+} from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
+
+// STEP A: REPLACE THIS WITH YOUR NOTEPAD CONFIGURATION
+ const firebaseConfig = {
+    apiKey: "AIzaSyD-a62SrUwD2uCIzyw1pVIB44mcQoChCdo",
+    authDomain: "seatsync-library-booking-ae69d.firebaseapp.com",
+    projectId: "seatsync-library-booking-ae69d",
+    storageBucket: "seatsync-library-booking-ae69d.firebasestorage.app",
+    messagingSenderId: "346762694629",
+    appId: "1:346762694629:web:9acffcdcbe6dea6111a90c",
+    measurementId: "G-Y2S64TP1D0"
+  };
+
+// INITIALIZE FIREBASE
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// APP STATE
 const TOTAL_SEATS = 40;
 const SLOTS = {
   "09:00-11:00": "09:00 AM – 11:00 AM",
@@ -15,72 +51,39 @@ const SLOTS = {
   "17:00-19:00": "05:00 PM – 07:00 PM"
 };
 
-let users = readStorage(USER_KEY);
-let bookings = readStorage(BOOKING_KEY);
 let currentUser = null;
+let bookings = [];
 let selectedSeat = null;
 let authMode = "login";
+let unsubscribeBookings = null;
 let toastTimer;
-
-// GENERAL HELPERS
 
 function $(id) {
   return document.getElementById(id);
 }
 
-function readStorage(key) {
-  try {
-    const value = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
+function todayString() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-function saveBookings() {
-  try {
-    localStorage.setItem(BOOKING_KEY, JSON.stringify(bookings));
-    return true;
-  } catch {
-    toast("Could not save booking. Check browser storage.");
-    return false;
-  }
+function seatCode(number) {
+  return "S" + String(number).padStart(2, "0");
 }
 
-function todayString(date = new Date()) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function slotStart(date, slot) {
+  return new Date(`${date}T${slot.split("-")[0]}:00`);
 }
 
-function startTime(booking) {
-  return new Date(
-    `${booking.date}T${booking.slot.split("-")[0]}:00`
-  ).getTime();
+function slotEnd(date, slot) {
+  return new Date(`${date}T${slot.split("-")[1]}:00`);
 }
 
-function endTime(booking) {
-  return new Date(
-    `${booking.date}T${booking.slot.split("-")[1]}:00`
-  ).getTime();
-}
-
-function statusOf(booking) {
-  if (booking.status === "cancelled") return "cancelled";
-  if (endTime(booking) <= Date.now()) return "completed";
-  return "active";
-}
-
-function expireBookings() {
-  let changed = false;
-  bookings.forEach(booking => {
-    if (booking.status === "active" && endTime(booking) <= Date.now()) {
-      booking.status = "completed";
-      changed = true;
-    }
-  });
-  if (changed) saveBookings();
+function isActive(booking) {
+  return booking.endAt?.toMillis() > Date.now();
 }
 
 function toast(message) {
@@ -89,118 +92,139 @@ function toast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
     $("toast").classList.remove("show");
-  }, 3200);
+  }, 3500);
 }
 
-// LOGIN AND REGISTRATION
-// DEMO ONLY: No password is stored or verified.
-// Never use a real password in this prototype.
+function friendlyError(error) {
+  const messages = {
+    "auth/email-already-in-use": "Email is already registered.",
+    "auth/invalid-email": "Enter a valid email address.",
+    "auth/weak-password": "Choose a stronger password.",
+    "auth/invalid-credential": "Incorrect email or password.",
+    "auth/too-many-requests": "Too many attempts. Try again later.",
+    "permission-denied": "Firebase permission denied. Check Firestore rules."
+  };
 
+  return messages[error.code] ||
+    messages[error.code?.replace("firestore/", "")] ||
+    error.message ||
+    "Something went wrong.";
+}
+
+// AUTHENTICATION TABS
 function switchAuth(mode) {
   authMode = mode;
   const register = mode === "register";
 
   $("registerFields").hidden = !register;
+  $("authName").required = register;
+  $("authReg").required = register;
+
   $("authHeading").textContent =
     register ? "Create your account" : "Welcome back";
-  $("authDescription").textContent =
-    register
-      ? "Join SeatSync to reserve your study space."
-      : "Sign in to access your study dashboard.";
+
+  $("authDescription").textContent = register
+    ? "Register to reserve your library seat."
+    : "Sign in to your SeatSync dashboard.";
+
   $("authSubmit").textContent =
     register ? "Create Account →" : "Sign In →";
 
   $("loginTab").classList.toggle("active", !register);
   $("registerTab").classList.toggle("active", register);
-
-  $("authName").required = register;
-  $("authReg").required = register;
   $("authError").textContent = "";
 }
 
 $("loginTab").addEventListener("click", () => switchAuth("login"));
 $("registerTab").addEventListener("click", () => switchAuth("register"));
 
-$("authForm").addEventListener("submit", event => {
+// REAL FIREBASE REGISTRATION AND LOGIN
+$("authForm").addEventListener("submit", async event => {
   event.preventDefault();
 
   const email = $("authEmail").value.trim().toLowerCase();
   const password = $("authPassword").value;
+  const button = $("authSubmit");
 
-  if (password.length < 6) {
-    $("authError").textContent = "Enter at least 6 characters.";
-    return;
+  button.disabled = true;
+  $("authError").textContent = "";
+
+  try {
+    if (authMode === "register") {
+      const name = $("authName").value.trim();
+      const reg = $("authReg").value.trim();
+
+      if (!name || !reg) {
+        throw new Error("Enter your name and registration number.");
+      }
+
+      const credential = await createUserWithEmailAndPassword(
+        auth, email, password
+      );
+
+      await setDoc(doc(db, "users", credential.user.uid), {
+        name,
+        reg,
+        email,
+        createdAt: serverTimestamp()
+      });
+
+      toast("Account created successfully!");
+    } else {
+      await signInWithEmailAndPassword(auth, email, password);
+      toast("Welcome back!");
+    }
+  } catch (error) {
+    $("authError").textContent = friendlyError(error);
+  } finally {
+    button.disabled = false;
   }
-
-  if (authMode === "register") {
-    const name = $("authName").value.trim();
-    const reg = $("authReg").value.trim();
-
-    if (!name || !reg) {
-      $("authError").textContent = "Enter your name and registration number.";
-      return;
-    }
-
-    if (users.some(u => u.email === email)) {
-      $("authError").textContent = "Email already registered.";
-      return;
-    }
-
-    if (users.some(u => u.reg.toLowerCase() === reg.toLowerCase())) {
-      $("authError").textContent = "Registration number already exists.";
-      return;
-    }
-
-    const user = {
-      id: makeId(),
-      name,
-      reg,
-      email
-    };
-
-    const updatedUsers = [...users, user];
-
-    try {
-      localStorage.setItem(USER_KEY, JSON.stringify(updatedUsers));
-    } catch {
-      $("authError").textContent = "Could not save account.";
-      return;
-    }
-
-    users = updatedUsers;
-    login(user);
-    return;
-  }
-
-  const user = users.find(u => u.email === email);
-
-  if (!user) {
-    $("authError").textContent =
-      "Account not found. Please create an account.";
-    return;
-  }
-
-  // Password is intentionally NOT checked.
-  // This is a demonstration of the login interface only.
-  login(user);
 });
 
-function makeId() {
-  if (crypto && crypto.randomUUID) {
-    return crypto.randomUUID();
+// AUTHENTICATION STATE
+onAuthStateChanged(auth, async firebaseUser => {
+  if (unsubscribeBookings) {
+    unsubscribeBookings();
+    unsubscribeBookings = null;
   }
-  return Date.now().toString(36) +
-    Math.random().toString(36).slice(2);
-}
 
-function login(user) {
-  currentUser = user;
-  sessionStorage.setItem(SESSION_KEY, user.id);
+  if (!firebaseUser) {
+    currentUser = null;
+    bookings = [];
+    selectedSeat = null;
 
-  $("authScreen").classList.add("hidden");
-  $("app").classList.remove("hidden");
+    $("app").classList.add("hidden");
+    $("authScreen").classList.remove("hidden");
+    return;
+  }
 
-  const initials = user.name
+  try {
+    const profile = await getDoc(doc(db, "users", firebaseUser.uid));
+
+    if (!profile.exists()) {
+      $("authError").textContent =
+        "Student profile not ready. Please try signing in again.";
+      return;
+    }
+
+    if (auth.currentUser?.uid !== firebaseUser.uid) return;
+
+    currentUser = {
+      uid: firebaseUser.uid,
+      email: firebaseUser.email,
+      ...profile.data()
+    };
+
+    openDashboard();
+    listenForBookings();
+  } catch (error) {
+    toast(friendlyError(error));
+  }
+});
+
+function openDashboard() {
+  const name = currentUser.name;
+  const initials = name
     .split(/\s+/)
     .slice(0, 2)
     .map(word => word[0])
@@ -209,54 +233,60 @@ function login(user) {
 
   $("profileAvatar").textContent = initials;
   $("topAvatar").textContent = initials.charAt(0);
-  $("profileName").textContent = user.name;
-  $("profileReg").textContent = user.reg;
-  $("welcomeTitle").textContent =
-    `Welcome, ${user.name.split(" ")[0]} 👋`;
+  $("profileName").textContent = name;
+  $("profileReg").textContent = currentUser.reg;
 
-  $("studentName").value = user.name;
-  $("studentReg").value = user.reg;
+  $("welcomeTitle").textContent =
+    `Welcome, ${name.split(" ")[0]} 👋`;
+
+  $("studentName").value = name;
+  $("studentReg").value = currentUser.reg;
+
+  $("authScreen").classList.add("hidden");
+  $("app").classList.remove("hidden");
+
+  // Admin demo is not a protected admin system.
+  // Hide it until proper admin roles are implemented.
+  const adminButton = document.querySelector(
+    '.nav-btn[data-page="admin"]'
+  );
+  if (adminButton) adminButton.hidden = true;
 
   showPage("dashboard");
 }
 
-function logout() {
-  currentUser = null;
-  selectedSeat = null;
-  sessionStorage.removeItem(SESSION_KEY);
-  $("app").classList.add("hidden");
-  $("authScreen").classList.remove("hidden");
-  $("authForm").reset();
-  switchAuth("login");
-}
-
-$("logoutBtn").addEventListener("click", logout);
-
-function restoreSession() {
-  const id = sessionStorage.getItem(SESSION_KEY);
-  const user = users.find(u => u.id === id);
-  if (user) login(user);
-}
+$("logoutBtn").addEventListener("click", async () => {
+  try {
+    await signOut(auth);
+    $("authForm").reset();
+    switchAuth("login");
+    toast("Signed out successfully.");
+  } catch (error) {
+    toast(friendlyError(error));
+  }
+});
 
 // NAVIGATION
-
 function showPage(pageId) {
+  if (pageId === "admin") {
+    toast("Admin access is not configured yet.");
+    return;
+  }
+
   document.querySelectorAll(".page").forEach(page => {
     page.classList.toggle("active", page.id === pageId);
   });
 
   document.querySelectorAll(".nav-btn").forEach(button => {
     button.classList.toggle(
-      "active",
-      button.dataset.page === pageId
+      "active", button.dataset.page === pageId
     );
   });
 
   const titles = {
     dashboard: "Dashboard",
     booking: "Book a Seat",
-    history: "My Bookings",
-    admin: "Admin Demo"
+    history: "My Bookings"
   };
 
   $("pageTitle").textContent = titles[pageId];
@@ -280,31 +310,46 @@ $("menuBtn").addEventListener("click", () => {
   $("sidebar").classList.toggle("open");
 });
 
-// SEAT SELECTION
-
-function selectedDate() {
-  return $("bookingDate").value;
-}
-
-function selectedSlot() {
-  return $("bookingSlot").value;
-}
-
-function seatBooked(number, date, slot) {
-  return bookings.some(booking =>
-    booking.seat === number &&
-    booking.date === date &&
-    booking.slot === slot &&
-    statusOf(booking) === "active"
+// REAL-TIME FIRESTORE LISTENER
+function listenForBookings() {
+  unsubscribeBookings = onSnapshot(
+    collection(db, "bookings"),
+    snapshot => {
+      bookings = snapshot.docs.map(item => ({
+        id: item.id,
+        ...item.data()
+      }));
+      renderAll();
+    },
+    error => {
+      toast("Unable to load seats: " + friendlyError(error));
+    }
   );
 }
 
+function seatBooked(number, date, slot) {
+  return bookings.some(b =>
+    b.seat === seatCode(number) &&
+    b.date === date &&
+    b.slot === slot &&
+    isActive(b)
+  );
+}
+
+// SEAT MAP
 function renderSeats() {
   $("quietSeats").replaceChildren();
   $("digitalSeats").replaceChildren();
 
-  const date = selectedDate();
-  const slot = selectedSlot();
+  const date = $("bookingDate").value;
+  const slot = $("bookingSlot").value;
+
+  if (
+    selectedSeat !== null &&
+    seatBooked(selectedSeat, date, slot)
+  ) {
+    selectedSeat = null;
+  }
 
   for (let number = 1; number <= TOTAL_SEATS; number++) {
     const occupied = date && slot
@@ -330,22 +375,18 @@ function renderSeats() {
 
     const label = document.createElement("span");
     label.className = "seat-number";
-    label.textContent = "S" + String(number).padStart(2, "0");
+    label.textContent = seatCode(number);
 
     button.append(icon, label);
-    button.setAttribute(
-      "aria-label",
-      `Seat ${number}, ${occupied ? "booked" : "available"}`
-    );
 
     button.addEventListener("click", () => {
       if (!date || !slot) {
-        toast("Select a date and time slot first.");
+        toast("First select a date and time slot.");
         return;
       }
 
-      if (seatBooked(number, date, slot)) {
-        toast("This seat is already booked.");
+      if (slotStart(date, slot) <= new Date()) {
+        toast("Choose a future time slot.");
         return;
       }
 
@@ -353,22 +394,23 @@ function renderSeats() {
       renderSeats();
     });
 
-    const container = number <= 20
+    (number <= 20
       ? $("quietSeats")
-      : $("digitalSeats");
-
-    container.appendChild(button);
+      : $("digitalSeats")
+    ).appendChild(button);
   }
 
-  $("selectedSeatLabel").textContent = selectedSeat
-    ? "Seat S" + String(selectedSeat).padStart(2, "0")
-    : "None";
+  $("selectedSeatLabel").textContent =
+    selectedSeat === null
+      ? "None"
+      : `Seat ${seatCode(selectedSeat)}`;
 
-  $("selectedZoneLabel").textContent = !selectedSeat
-    ? "Choose a seat from the map"
-    : selectedSeat <= 20
-      ? "Quiet Study Zone"
-      : "Digital Learning Zone";
+  $("selectedZoneLabel").textContent =
+    selectedSeat === null
+      ? "Choose a seat from the map"
+      : selectedSeat <= 20
+        ? "Quiet Study Zone"
+        : "Digital Learning Zone";
 }
 
 $("bookingDate").addEventListener("change", () => {
@@ -381,94 +423,95 @@ $("bookingSlot").addEventListener("change", () => {
   renderAll();
 });
 
-// CREATE RESERVATION
-
-$("bookingForm").addEventListener("submit", event => {
+// FIRESTORE TRANSACTION: PREVENT DOUBLE BOOKING
+$("bookingForm").addEventListener("submit", async event => {
   event.preventDefault();
 
   if (!currentUser) {
-    toast("Please sign in first.");
+    toast("Please sign in.");
     return;
   }
 
-  expireBookings();
+  const date = $("bookingDate").value;
+  const slot = $("bookingSlot").value;
+  const seat = selectedSeat;
 
-  const date = selectedDate();
-  const slot = selectedSlot();
-
-  if (!date || !slot || selectedSeat === null) {
-    toast("Choose a date, time slot and available seat.");
+  if (!date || !SLOTS[slot] || seat === null) {
+    toast("Choose a date, time slot and seat.");
     return;
   }
 
-  if (date < todayString()) {
-    toast("You cannot reserve a past date.");
+  const start = slotStart(date, slot);
+  const end = slotEnd(date, slot);
+
+  if (start <= new Date()) {
+    toast("You cannot book a past time slot.");
     return;
   }
 
-  const start = new Date(
-    `${date}T${slot.split("-")[0]}:00`
-  ).getTime();
-
-  if (!Number.isFinite(start) || start <= Date.now()) {
-    toast("This time slot has already started.");
-    return;
-  }
-
-  if (seatBooked(selectedSeat, date, slot)) {
-    toast("This seat is already reserved.");
-    selectedSeat = null;
-    renderSeats();
-    return;
-  }
-
-  const duplicate = bookings.some(booking =>
-    booking.userId === currentUser.id &&
-    booking.date === date &&
-    booking.slot === slot &&
-    statusOf(booking) === "active"
-  );
-
-  if (duplicate) {
-    toast("You already have a booking for this time slot.");
-    return;
-  }
-
-  const booking = {
-    id: "SS-" + makeId().slice(0, 8).toUpperCase(),
-    userId: currentUser.id,
-    name: currentUser.name,
-    reg: currentUser.reg,
-    seat: selectedSeat,
-    date,
-    slot,
-    status: "active",
-    createdAt: new Date().toISOString()
-  };
-
-  bookings.push(booking);
-
-  if (!saveBookings()) {
-    bookings.pop();
-    return;
-  }
-
-  showConfirmation(booking);
-  selectedSeat = null;
-  $("bookingSlot").value = "";
-  renderAll();
+  const code = seatCode(seat);
+  const bookingId = `${date}_${slot}_${code}`;
+  const bookingRef = doc(db, "bookings", bookingId);
+  console.log("SEATSYNC BOOKING DEBUG", {
+  loggedIn: !!auth.currentUser,
+  userId: auth.currentUser?.uid,
+  bookingId,
+  seat: code,
+  date,
+  slot,
+  start: start.toISOString(),
+  end: end.toISOString(),
+  currentTime: new Date().toISOString()
 });
 
-// BOOKING CONFIRMATION
+  try {
+    await runTransaction(db, async transaction => {
+      const existing = await transaction.get(bookingRef);
 
+      if (existing.exists()) {
+        throw new Error("This seat has already been booked.");
+      }
+
+      transaction.set(bookingRef, {
+        userId: currentUser.uid,
+        name: currentUser.name,
+        reg: currentUser.reg,
+        seat: code,
+        date,
+        slot,
+        status: "active",
+        startAt: Timestamp.fromDate(start),
+        endAt: Timestamp.fromDate(end),
+        createdAt: serverTimestamp()
+      });
+    });
+
+    showConfirmation({
+      id: bookingId,
+      seat: code,
+      date,
+      slot,
+      name: currentUser.name
+    });
+
+    selectedSeat = null;
+    $("bookingSlot").value = "";
+    renderAll();
+  } catch (error) {
+    toast(friendlyError(error));
+    renderAll();
+  }
+});
+
+// CONFIRMATION MODAL
 function showConfirmation(booking) {
-  const container = $("confirmationDetails");
-  container.replaceChildren();
+  const box = $("confirmationDetails");
+  box.replaceChildren();
 
   const details = [
     ["Booking ID", booking.id],
     ["Student", booking.name],
-    ["Seat", "S" + String(booking.seat).padStart(2, "0")],
+    ["Seat", booking.seat],
     ["Date", booking.date],
     ["Time", SLOTS[booking.slot]]
   ];
@@ -478,7 +521,7 @@ function showConfirmation(booking) {
     const strong = document.createElement("strong");
     strong.textContent = label + ": ";
     line.append(strong, document.createTextNode(value));
-    container.appendChild(line);
+    box.appendChild(line);
   });
 
   $("successModal").classList.add("show");
@@ -489,31 +532,35 @@ $("closeModal").addEventListener("click", () => {
   showPage("dashboard");
 });
 
-// CANCEL RESERVATION
-
-function cancelBooking(id) {
+// CANCEL BOOKING
+async function cancelBooking(id) {
   const booking = bookings.find(b => b.id === id);
 
-  if (!booking || statusOf(booking) !== "active") {
-    toast("This booking cannot be cancelled.");
+  if (!booking || booking.userId !== currentUser?.uid) {
+    toast("You cannot cancel this booking.");
     return;
   }
 
-  if (!confirm("Cancel reservation " + id + "?")) {
+  if (!isActive(booking)) {
+    toast("This booking has already finished.");
     return;
   }
 
-  booking.status = "cancelled";
-  saveBookings();
-  renderAll();
-  toast("Booking cancelled. Seat released.");
+  if (!confirm("Cancel this seat reservation?")) return;
+
+  try {
+    // Deleting releases the seat for another student.
+    await deleteDoc(doc(db, "bookings", id));
+    toast("Reservation cancelled. Seat is available again.");
+  } catch (error) {
+    toast(friendlyError(error));
+  }
 }
 
-// TABLE UTILITIES
-
-function addCell(row, text) {
+// TABLE HELPERS
+function addCell(row, value) {
   const td = document.createElement("td");
-  td.textContent = text;
+  td.textContent = value;
   row.appendChild(td);
 }
 
@@ -530,7 +577,7 @@ function addStatus(row, status) {
 function addAction(row, booking) {
   const td = document.createElement("td");
 
-  if (statusOf(booking) === "active") {
+  if (isActive(booking)) {
     const button = document.createElement("button");
     button.className = "cancel-btn";
     button.textContent = "Cancel";
@@ -545,18 +592,7 @@ function addAction(row, booking) {
   row.appendChild(td);
 }
 
-function emptyRow(body, count, message) {
-  const row = document.createElement("tr");
-  const td = document.createElement("td");
-  td.colSpan = count;
-  td.className = "empty";
-  td.textContent = message;
-  row.appendChild(td);
-  body.appendChild(row);
-}
-
-// PERSONAL BOOKING HISTORY
-
+// MY BOOKINGS
 function renderHistory() {
   const body = $("historyBody");
   body.replaceChildren();
@@ -564,15 +600,22 @@ function renderHistory() {
   if (!currentUser) return;
 
   const mine = bookings
-    .filter(b => b.userId === currentUser.id)
-    .slice()
-    .reverse();
+    .filter(b => b.userId === currentUser.uid)
+    .sort((a, b) =>
+      b.startAt.toMillis() - a.startAt.toMillis()
+    );
 
   $("historyCount").textContent =
     mine.length + " BOOKINGS";
 
   if (mine.length === 0) {
-    emptyRow(body, 6, "No bookings yet. Book your first seat!");
+    const row = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 6;
+    td.className = "empty";
+    td.textContent = "No reservations yet.";
+    row.appendChild(td);
+    body.appendChild(row);
     return;
   }
 
@@ -580,10 +623,10 @@ function renderHistory() {
     const row = document.createElement("tr");
 
     addCell(row, booking.id);
-    addCell(row, "S" + String(booking.seat).padStart(2, "0"));
+    addCell(row, booking.seat);
     addCell(row, booking.date);
     addCell(row, SLOTS[booking.slot]);
-    addStatus(row, statusOf(booking));
+    addStatus(row, isActive(booking) ? "active" : "completed");
     addAction(row, booking);
 
     body.appendChild(row);
@@ -591,69 +634,66 @@ function renderHistory() {
 }
 
 // DASHBOARD
-
-function dashboardSlot() {
+function currentSlot() {
   const now = new Date();
-  const time = now.getHours() * 60 + now.getMinutes();
+  const minutes = now.getHours() * 60 + now.getMinutes();
 
   return Object.keys(SLOTS).find(slot => {
     const [start, end] = slot.split("-");
-    const toMinutes = value => {
+
+    const convert = value => {
       const [h, m] = value.split(":").map(Number);
       return h * 60 + m;
     };
-    return time >= toMinutes(start) && time < toMinutes(end);
+
+    return minutes >= convert(start) &&
+      minutes < convert(end);
   }) || null;
 }
 
 function renderDashboard() {
-  const today = todayString();
-  const slot = dashboardSlot();
+  const slot = currentSlot();
+  const date = todayString();
 
   const occupied = new Set();
 
-  if (slot) {
-    bookings.forEach(booking => {
-      if (
-        booking.date === today &&
-        booking.slot === slot &&
-        statusOf(booking) === "active"
-      ) {
-        occupied.add(booking.seat);
-      }
-    });
-  }
+  bookings.forEach(b => {
+    if (
+      slot &&
+      b.date === date &&
+      b.slot === slot &&
+      isActive(b)
+    ) {
+      occupied.add(b.seat);
+    }
+  });
 
   $("statTotal").textContent = TOTAL_SEATS;
   $("statOccupied").textContent = occupied.size;
   $("statAvailable").textContent =
     TOTAL_SEATS - occupied.size;
 
-  const mine = currentUser
-    ? bookings.filter(b =>
-        b.userId === currentUser.id &&
-        statusOf(b) === "active"
-      )
-    : [];
+  const mine = bookings.filter(b =>
+    b.userId === currentUser?.uid && isActive(b)
+  );
 
   $("statMine").textContent = mine.length;
 
-  const upcoming = mine
-    .filter(b => endTime(b) > Date.now())
-    .sort((a, b) => startTime(a) - startTime(b))[0];
+  const upcoming = [...mine].sort((a, b) =>
+    a.startAt.toMillis() - b.startAt.toMillis()
+  )[0];
 
   const box = $("nextBooking");
   box.replaceChildren();
 
   if (!upcoming) {
     box.textContent =
-      "No upcoming reservation. Book a seat to get started.";
+      "No upcoming reservations. Book your first seat!";
     return;
   }
 
   const strong = document.createElement("strong");
-  strong.textContent =
-    "Seat S" + String(upcoming.seat).padStart(2, "0");
+  strong.textContent = upcoming.seat;
 
   box.append(
     strong,
@@ -663,54 +703,28 @@ function renderDashboard() {
   );
 }
 
-// ADMIN DEMO
-
+// ADMIN DEMO DISABLED UNTIL ROLE-BASED ACCESS EXISTS
 function renderAdmin() {
-  const body = $("adminBody");
-  body.replaceChildren();
-
-  $("adminTotal").textContent = bookings.length;
-  $("adminActive").textContent =
-    bookings.filter(b => statusOf(b) === "active").length;
-  $("adminCompleted").textContent =
-    bookings.filter(b => statusOf(b) === "completed").length;
-  $("adminCancelled").textContent =
-    bookings.filter(b => statusOf(b) === "cancelled").length;
-
-  if (bookings.length === 0) {
-    emptyRow(body, 7, "No reservations recorded yet.");
-    return;
-  }
-
-  [...bookings].reverse().forEach(booking => {
-    const row = document.createElement("tr");
-
-    addCell(row, booking.id);
-    addCell(row, booking.name);
-    addCell(row, booking.reg);
-    addCell(row, "S" + String(booking.seat).padStart(2, "0"));
-    addCell(row, booking.date);
-    addStatus(row, statusOf(booking));
-    addAction(row, booking);
-
-    body.appendChild(row);
-  });
+  $("adminTotal").textContent = "—";
+  $("adminActive").textContent = "—";
+  $("adminCompleted").textContent = "—";
+  $("adminCancelled").textContent = "—";
+  $("adminBody").replaceChildren();
 }
 
-$("refreshAdmin").addEventListener("click", renderAll);
+$("refreshAdmin").addEventListener("click", () => {
+  toast("Admin dashboard requires administrator permissions.");
+});
 
-// RENDER EVERYTHING
-
+// REFRESH
 function renderAll() {
-  expireBookings();
   renderSeats();
   renderDashboard();
   renderHistory();
   renderAdmin();
 }
 
-// INITIAL SETUP
-
+// STARTUP
 $("todayLabel").textContent =
   new Date().toLocaleDateString("en-IN", {
     day: "numeric",
@@ -722,10 +736,11 @@ $("bookingDate").min = todayString();
 $("bookingDate").value = todayString();
 
 switchAuth("login");
-restoreSession();
 renderAll();
 
-// Check expired bookings every 30 seconds.
-setInterval(renderAll, 30000);
+setInterval(() => {
+  $("bookingDate").min = todayString();
+  if (currentUser) renderAll();
+}, 30000);
 
-console.log("SeatSync is ready!");
+console.log("SeatSync Firebase initialized");
