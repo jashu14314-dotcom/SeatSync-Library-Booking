@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SeatSync | Smart Library Booking</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+
+<!-- LOGIN AND REGISTRATION -->
+<section id="authScreen" class="auth-screen">
+  <div class="auth-left">
+    <div class="auth-brand"><span class="logo-icon">S</span> SeatSync</div>
+    <div class="auth-intro">
+      <span class="eyebrow light">SMART CAMPUS LIBRARY</span>
+      <h1>Your space to focus.<br><em>Your time to shine.</em></h1>
+      <p>Find the perfect study spot, reserve it instantly and make every study session count.</p>
+      <div class="auth-feature">✓ &nbsp; 40 interactive study seats</div>
+      <div class="auth-feature">✓ &nbsp; Instant reservation confirmation</div>
+      <div class="auth-feature">✓ &nbsp; Personal booking dashboard</div>
+    </div>
+    <small>© 2026 SeatSync · Designed for students</small>
+  </div>
+
+  <div class="auth-right">
+    <div class="auth-box">
+      <div class="mobile-brand">✦ SeatSync</div>
+      <span class="eyebrow">WELCOME TO SEATSYNC</span>
+      <h2 id="authHeading">Welcome back</h2>
+      <p class="muted" id="authDescription">Sign in to access your study dashboard.</p>
+
+      <div class="auth-tabs">
+        <button id="loginTab" class="auth-tab active" type="button">Sign In</button>
+        <button id="registerTab" class="auth-tab" type="button">Create Account</button>
+      </div>
+
+      <form id="authForm">
+        <div id="registerFields" hidden>
+          <label for="authName">Full Name</label>
+          <input id="authName" placeholder="Your full name" maxlength="60">
+          <label for="authReg">Registration Number</label>
+          <input id="authReg" placeholder="University registration number" maxlength="30">
+        </div>
+
+        <label for="authEmail">Email Address</label>
+        <input id="authEmail" type="email" placeholder="student@example.com" required>
+
+        <label for="authPassword">Password</label>
+        <input id="authPassword" type="password" placeholder="Enter password" minlength="6" required>
+
+        <button class="btn primary full" id="authSubmit" type="submit">Sign In →</button>
+        <p id="authError" class="error-message" role="status"></p>
+      </form>
+
+      <p class="auth-footnote">Student project demo · Do not use a real password</p>
+    </div>
+  </div>
+</section>
+
+<!-- MAIN APPLICATION -->
+<div id="app" class="app hidden">
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-brand"><span class="logo-icon">S</span><div>SeatSync<small>SMART LIBRARY</small></div></div>
+    <div class="nav-label">WORKSPACE</div>
+    <nav class="nav">
+      <button class="nav-btn active" data-page="dashboard">◈ &nbsp; Dashboard</button>
+      <button class="nav-btn" data-page="booking">▦ &nbsp; Book a Seat</button>
+      <button class="nav-btn" data-page="history">◷ &nbsp; My Bookings</button>
+      <button class="nav-btn" data-page="admin">⚙ &nbsp; Admin Demo</button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="sidebar-tip">✦<h3>Study smarter.</h3><p>Find your focus zone and book your seat in seconds.</p></div>
+      <div class="profile"><div class="avatar" id="profileAvatar">ST</div><div><strong id="profileName">Student</strong><small id="profileReg">Student ID</small></div></div>
+      <button class="logout-btn" id="logoutBtn">↪ &nbsp; Sign Out</button>
+    </div>
+  </aside>
+
+  <div class="main-area">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button id="menuBtn" class="menu-btn" type="button">☰</button>
+        <span class="muted">Workspace /</span> <strong id="pageTitle">Dashboard</strong>
+      </div>
+      <div class="topbar-right"><span class="online-dot"></span> <span>System Online</span><span id="todayLabel" class="top-date"></span><div class="top-avatar" id="topAvatar">S</div></div>
+    </header>
+
+    <main class="content">
+      <!-- DASHBOARD -->
+      <section id="dashboard" class="page active">
+        <div class="page-heading">
+          <div><span class="eyebrow">STUDENT WORKSPACE</span><h1 id="welcomeTitle">Welcome to SeatSync 👋</h1><p>Everything you need for a productive study session.</p></div>
+          <button class="btn primary go-booking">+ Book a Seat</button>
+        </div>
+
+        <div class="hero">
+          <div>
+            <span class="hero-label">✦ YOUR SMART STUDY COMPANION</span>
+            <h2>Less searching.<br><span>More studying.</span></h2>
+            <p>Reserve your ideal library space with just a few clicks.</p>
+            <button class="btn hero-button go-booking">Explore Available Seats →</button>
+          </div>
+          <div class="hero-art">📚</div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">Total Library Seats <span>▦</span></div><strong id="statTotal">40</strong><small>Across two study zones</small></div>
+          <div class="stat-card"><div class="stat-label">Available Seats <span>✓</span></div><strong id="statAvailable">40</strong><small>For the current time slot</small></div>
+          <div class="stat-card"><div class="stat-label">Occupied Seats <span>●</span></div><strong id="statOccupied">0</strong><small>For the current time slot</small></div>
+          <div class="stat-card"><div class="stat-label">My Active Bookings <span>◷</span></div><strong id="statMine">0</strong><small>Upcoming reservations</small></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div><h3>Study Zones</h3><p>Choose the environment that suits you best.</p></div><button class="btn outline go-booking">View Seat Map →</button></div>
+          <div class="zones">
+            <div class="zone-card"><div class="zone-icon">📖</div><div><strong>Quiet Study Zone</strong><p>Focused individual study and reading</p></div><span>20 SEATS</span></div>
+            <div class="zone-card"><div class="zone-icon">💻</div><div><strong>Digital Learning Zone</strong><p>Technology-enabled study workspace</p></div><span>20 SEATS</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div><h3>My Next Reservation</h3><p>Your upcoming study session</p></div></div>
+          <div id="nextBooking" class="next-booking"></div>
+        </div>
+      </section>
+
+      <!-- BOOK SEAT -->
+      <section id="booking" class="page">
+        <div class="page-heading"><div><span class="eyebrow">SEAT RESERVATIONS</span><h1>Find Your Perfect Seat</h1><p>Choose a date and time, then select an available seat.</p></div></div>
+        <div class="booking-layout">
+          <div class="panel">
+            <div class="panel-head"><div><h3>Interactive Library Seat Map</h3><p>Green seats are available for your selected slot.</p></div><span class="pill">FLOOR 01</span></div>
+            <div class="legend"><span><i class="dot available"></i> Available</span><span><i class="dot occupied"></i> Booked</span><span><i class="dot selected"></i> Selected</span></div>
+            <div class="zone-heading"><strong>📖 Quiet Study Zone</strong><small>SEATS 01–20</small></div>
+            <div class="seat-grid" id="quietSeats"></div>
+            <div class="zone-heading second"><strong>💻 Digital Learning Zone</strong><small>SEATS 21–40</small></div>
+            <div class="seat-grid" id="digitalSeats"></div>
+            <div class="map-foot"><strong>🚪 ENTRANCE</strong><span>Choose your preferred study space</span></div>
+          </div>
+
+          <div class="panel form-panel">
+            <h3>Reservation Details</h3><p class="muted">Complete your booking information.</p>
+            <div class="selected-box"><small>YOUR SELECTED SEAT</small><h2 id="selectedSeatLabel">None</h2><p id="selectedZoneLabel">Choose a seat from the map</p></div>
+            <form id="bookingForm">
+              <label for="studentName">Student Name</label><input id="studentName" readonly required>
+              <label for="studentReg">Registration Number</label><input id="studentReg" readonly required>
+              <label for="bookingDate">Booking Date</label><input type="date" id="bookingDate" required>
+              <label for="bookingSlot">Time Slot</label>
+              <select id="bookingSlot" required>
+                <option value="">Select a time slot</option>
+                <option value="09:00-11:00">09:00 AM – 11:00 AM</option>
+                <option value="11:00-13:00">11:00 AM – 01:00 PM</option>
+                <option value="13:00-15:00">01:00 PM – 03:00 PM</option>
+                <option value="15:00-17:00">03:00 PM – 05:00 PM</option>
+                <option value="17:00-19:00">05:00 PM – 07:00 PM</option>
+              </select>
+              <button type="submit" class="btn primary full">Confirm Reservation →</button>
+            </form>
+            <p class="form-note">🔒 Bookings are stored in this browser only.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- HISTORY -->
+      <section id="history" class="page">
+        <div class="page-heading"><div><span class="eyebrow">MY STUDY SESSIONS</span><h1>Booking History</h1><p>View, track and cancel your reservations.</p></div><button class="btn primary go-booking">+ New Booking</button></div>
+        <div class="panel"><div class="panel-head"><div><h3>My Reservations</h3><p>Only bookings associated with your student account.</p></div><span class="pill" id="historyCount">0 BOOKINGS</span></div>
+          <div class="table-wrap"><table><thead><tr><th>Booking ID</th><th>Seat</th><th>Date</th><th>Time</th><th>Status</th><th>Action</th></tr></thead><tbody id="historyBody"></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- ADMIN DEMO -->
+      <section id="admin" class="page">
+        <div class="page-heading"><div><span class="eyebrow">SYSTEM MANAGEMENT</span><h1>Admin Dashboard</h1><p>Overview of all reservations in this browser.</p></div></div>
+        <div class="warning">⚠ Demonstration only: this admin panel has no authentication or role protection. Do not enter real student data.</div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">All Reservations <span>▤</span></div><strong id="adminTotal">0</strong><small>Total recorded</small></div>
+          <div class="stat-card"><div class="stat-label">Active <span>✓</span></div><strong id="adminActive">0</strong><small>Upcoming or ongoing</small></div>
+          <div class="stat-card"><div class="stat-label">Completed <span>◷</span></div><strong id="adminCompleted">0</strong><small>Expired sessions</small></div>
+          <div class="stat-card"><div class="stat-label">Cancelled <span>✕</span></div><strong id="adminCancelled">0</strong><small>Cancelled bookings</small></div>
+        </div>
+        <div class="panel"><div class="panel-head"><div><h3>Reservation Management</h3><p>All bookings created in this browser</p></div><button class="btn outline" id="refreshAdmin">↻ Refresh</button></div>
+          <div class="table-wrap"><table><thead><tr><th>Booking ID</th><th>Student</th><th>Registration</th><th>Seat</th><th>Date</th><th>Status</th><th>Action</th></tr></thead><tbody id="adminBody"></tbody></table></div>
+        </div>
+      </section>
+    </main>
+    <footer>© 2026 SeatSync · Smart Library Booking System <span>Made for smarter studying ✦</span></footer>
+  </div>
+</div>
+
+<!-- BOOKING CONFIRMATION -->
+<div id="successModal" class="modal-overlay">
+  <div class="modal">
+    <div class="success-icon">✓</div>
+    <h2>Booking Confirmed!</h2>
+    <p>Your study seat has been reserved successfully.</p>
+    <div id="confirmationDetails" class="confirmation"></div>
+    <button class="btn primary full" id="closeModal">Continue to Dashboard →</button>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status"></div>
+</body>
+</html>
